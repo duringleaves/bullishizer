@@ -682,6 +682,13 @@ def stock_detail(symbol):
     # Convert timestamp to datetime if it's not already
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     
+    # Debug: Check data after conversion
+    print(f"DEBUG: After datetime conversion, data shape: {df.shape}")
+    print(f"DEBUG: Sample of chart data:")
+    print(df[['timestamp', 'close', 'bullishness_score']].head(10))
+    print(f"DEBUG: Data types:")
+    print(df[['timestamp', 'close', 'bullishness_score']].dtypes)
+    
     # Create charts
     fig = go.Figure()
     
@@ -799,6 +806,47 @@ def debug_stock_data(symbol):
             'latest': date_range[1]
         },
         'latest_10_records': latest_df.to_dict('records')
+    })
+
+@app.route('/api/chart_data/<symbol>')
+@auth.login_required
+def debug_chart_data(symbol):
+    """Debug endpoint to see chart data structure"""
+    conn = sqlite3.connect(Config.DATABASE_PATH)
+    
+    # Use the same query as the chart
+    query = '''
+        SELECT * FROM (
+            SELECT * FROM stock_data 
+            WHERE symbol = ? 
+            ORDER BY timestamp DESC 
+            LIMIT 100
+        ) 
+        ORDER BY timestamp ASC
+    '''
+    df = pd.read_sql_query(query, conn, params=(symbol,))
+    conn.close()
+    
+    if df.empty:
+        return jsonify({'error': 'No data found'})
+    
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    
+    # Return the exact data that would be used in the chart
+    return jsonify({
+        'record_count': len(df),
+        'date_range': {
+            'start': df['timestamp'].iloc[0].isoformat(),
+            'end': df['timestamp'].iloc[-1].isoformat()
+        },
+        'price_data': {
+            'first_10': df[['timestamp', 'close']].head(10).to_dict('records'),
+            'last_10': df[['timestamp', 'close']].tail(10).to_dict('records')
+        },
+        'bullishness_data': {
+            'first_10': df[['timestamp', 'bullishness_score']].head(10).to_dict('records'),
+            'last_10': df[['timestamp', 'bullishness_score']].tail(10).to_dict('records')
+        }
     })
 
 @app.route('/backtest')
