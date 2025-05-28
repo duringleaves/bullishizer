@@ -1,0 +1,28 @@
+
+# docker-compose.yml
+version: '3.8'
+
+services:
+  stock-tracker:
+    build: .
+    container_name: stock-tracker
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - SIMPLEPUSH_KEY=${SIMPLEPUSH_KEY:-}
+      - FLASK_ENV=production
+      - UPDATE_INTERVAL=300
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5555/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    name: stock-tracker-network
