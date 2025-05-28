@@ -18,7 +18,6 @@ import plotly.utils
 
 # Configuration
 class Config:
-    # Use different paths for development vs production
     DATABASE_PATH = 'data/stock_tracker.db'
     
     SIMPLEPUSH_KEY = os.environ.get('SIMPLEPUSH_KEY', '')
@@ -597,6 +596,36 @@ def dashboard():
     conn.close()
     
     return render_template('dashboard.html', stocks=stocks_data.to_dict('records'))
+
+@app.route('/add_stock', methods=['POST'])
+@auth.login_required
+def add_stock():
+    """Add a new stock to track"""
+    symbol = request.form.get('symbol', '').upper()
+    name = request.form.get('name', '')
+    
+    if not symbol:
+        return jsonify({'error': 'Symbol required'}), 400
+    
+    try:
+        # Verify stock exists
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        if not name:
+            name = info.get('longName', symbol)
+        
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute('INSERT OR IGNORE INTO stocks (symbol, name) VALUES (?, ?)', (symbol, name))
+        conn.commit()
+        conn.close()
+        
+        # Update data immediately
+        analyzer.update_stock_data(symbol)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/delete_stock/<symbol>', methods=['POST'])
 @auth.login_required

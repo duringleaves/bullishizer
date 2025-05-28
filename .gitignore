@@ -1,3 +1,4 @@
 /.env
 /.venv
 /data/stock_tracker.db
+.DS_Store
