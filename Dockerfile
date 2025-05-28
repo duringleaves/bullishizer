@@ -25,7 +25,7 @@ RUN mkdir -p /app/data
 EXPOSE 5555
 
 # Environment variables
-ENV FLASK_APP=stock_tracker_no_talib.py
+ENV FLASK_APP=main.py
 ENV FLASK_ENV=production
 ENV PYTHONPATH=/app
 
