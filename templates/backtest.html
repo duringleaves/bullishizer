@@ -1,0 +1,212 @@
+<!-- templates/backtest.html -->
+{% extends "base.html" %}
+
+{% block title %}Backtest - Stock Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1><i class="fas fa-flask"></i> Strategy Backtesting</h1>
+        <p class="text-muted">Test your trading strategies against historical data</p>
+
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-cog"></i> Backtest Parameters</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="backtestForm">
+                            <div class="mb-3">
+                                <label for="symbol" class="form-label">Stock Symbol</label>
+                                <input type="text" class="form-control" id="symbol" name="symbol"
+                                    placeholder="e.g., AAPL" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="start_date" class="form-label">Start Date</label>
+                                <input type="date" class="form-control" id="start_date" name="start_date" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="end_date" class="form-label">End Date</label>
+                                <input type="date" class="form-control" id="end_date" name="end_date" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="buy_threshold" class="form-label">Buy Threshold</label>
+                                <input type="number" class="form-control" id="buy_threshold" name="buy_threshold"
+                                    value="60" min="0" max="100" step="1">
+                                <small class="form-text text-muted">Bullishness score threshold to trigger buy
+                                    signals</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="sell_threshold" class="form-label">Sell Threshold</label>
+                                <input type="number" class="form-control" id="sell_threshold" name="sell_threshold"
+                                    value="40" min="0" max="100" step="1">
+                                <small class="form-text text-muted">Bullishness score threshold to trigger sell
+                                    signals</small>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-play"></i> Run Backtest
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-chart-bar"></i> Results</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="backtestResults" style="display: none;">
+                            <div class="row mb-4">
+                                <div class="col-md-3">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h6>Initial Value</h6>
+                                            <h4 id="initialValue">$0</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h6>Final Value</h6>
+                                            <h4 id="finalValue">$0</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h6>Total Return</h6>
+                                            <h4 id="totalReturn">0%</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card bg-light">
+                                        <div class="card-body text-center">
+                                            <h6>Number of Trades</h6>
+                                            <h4 id="numTrades">0</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <h6>Trade History</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Action</th>
+                                            <th>Price</th>
+                                            <th>Shares</th>
+                                            <th>Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tradesTable">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="loadingResults" style="display: none;">
+                            <div class="text-center">
+                                <div class="spinner-border" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2">Running backtest...</p>
+                            </div>
+                        </div>
+
+                        <div id="noResults" class="text-center text-muted">
+                            <i class="fas fa-chart-line fa-3x mb-3"></i>
+                            <p>Configure parameters and run a backtest to see results</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Set default dates
+    document.addEventListener('DOMContentLoaded', function () {
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setFullYear(endDate.getFullYear() - 1);
+
+        document.getElementById('end_date').value = endDate.toISOString().split('T')[0];
+        document.getElementById('start_date').value = startDate.toISOString().split('T')[0];
+    });
+
+    document.getElementById('backtestForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+        const data = Object.fromEntries(formData);
+
+        // Show loading
+        document.getElementById('noResults').style.display = 'none';
+        document.getElementById('backtestResults').style.display = 'none';
+        document.getElementById('loadingResults').style.display = 'block';
+
+        fetch('/api/backtest', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('loadingResults').style.display = 'none';
+
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    document.getElementById('noResults').style.display = 'block';
+                    return;
+                }
+
+                // Display results
+                document.getElementById('initialValue').textContent = '$' + data.initial_value.toLocaleString();
+                document.getElementById('finalValue').textContent = '$' + data.final_value.toLocaleString();
+                document.getElementById('totalReturn').textContent = data.total_return.toFixed(2) + '%';
+                document.getElementById('totalReturn').className = data.total_return >= 0 ? 'text-success' : 'text-danger';
+                document.getElementById('numTrades').textContent = data.num_trades;
+
+                // Display trades
+                const tradesTable = document.getElementById('tradesTable');
+                tradesTable.innerHTML = '';
+
+                data.trades.forEach(trade => {
+                    const row = tradesTable.insertRow();
+                    row.innerHTML = `
+                <td>${new Date(trade.date).toLocaleDateString()}</td>
+                <td><span class="badge ${trade.action === 'BUY' ? 'bg-success' : 'bg-danger'}">${trade.action}</span></td>
+                <td>${trade.price.toFixed(2)}</td>
+                <td>${trade.shares.toFixed(2)}</td>
+                <td>${(trade.price * trade.shares).toLocaleString()}</td>
+            `;
+                });
+
+                document.getElementById('backtestResults').style.display = 'block';
+            })
+            .catch(error => {
+                document.getElementById('loadingResults').style.display = 'none';
+                document.getElementById('noResults').style.display = 'block';
+                alert('Error running backtest: ' + error);
+            });
+    });
+</script>
+{% endblock %}>

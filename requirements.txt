@@ -1,0 +1,9 @@
+# requirements.txt
+Flask
+Flask-SocketIO
+yfinance
+pandas
+numpy
+plotly
+requests
+python-socketio
