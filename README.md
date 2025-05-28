@@ -29,3 +29,19 @@ Composite_Score = Sigma (weightS_i$ x PercentileS_i$)
 These are then combined to provide an initial Composite_Score
 Finally, my model adds a "Cluster Score" when more than five Bullishness Scores exceed 80, up to a max 100, and then added to output a:
 Total Bullishness Score
+
+I wrote it to send me notifications via SimplePush.
+
+---
+Installation:
+
+git clone https://github.com/duringleaves/bullishizer
+cd bullishizer
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+mv .env_sample .env
+(edit .env with your preferred username/password, if desired)
+
+python main.py
+(default authentication: u: admin p: password123)
