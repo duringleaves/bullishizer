@@ -11,20 +11,43 @@ import pandas as pd
 import yfinance as yf
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 from flask_socketio import SocketIO, emit
+from flask_httpauth import HTTPBasicAuth
+from werkzeug.security import check_password_hash, generate_password_hash
 import plotly.graph_objs as go
 import plotly.utils
 
 # Configuration
 class Config:
-    DATABASE_PATH = 'stock_tracker.db'
-    SIMPLEPUSH_KEY = os.environ.get('SIMPLEPUSH_KEY', '')  # Set your Simplepush key
-    UPDATE_INTERVAL = 300  # 5 minutes
+    DATABASE_PATH = 'data/stock_tracker.db'
+    SIMPLEPUSH_KEY = os.environ.get('SIMPLEPUSH_KEY', '')
+    UPDATE_INTERVAL = int(os.environ.get('UPDATE_INTERVAL', 300))
     MARKET_HOURS_ONLY = True
+    # Authentication settings
+    AUTH_USERNAME = os.environ.get('AUTH_USERNAME', 'admin')
+    AUTH_PASSWORD = os.environ.get('AUTH_PASSWORD', 'password123')
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Initialize HTTP Basic Auth
+auth = HTTPBasicAuth()
+
+# Simple user database (just one user for this use case)
+users = {
+    Config.AUTH_USERNAME: generate_password_hash(Config.AUTH_PASSWORD)
+}
+
+@auth.verify_password
+def verify_password(username, password):
+    if username in users and check_password_hash(users.get(username), password):
+        return username
+    return None
+
+@auth.error_handler
+def auth_error(status):
+    return jsonify({'error': 'Authentication required'}), status
 
 class TechnicalIndicators:
     """Custom implementation of technical indicators without TA-Lib dependency"""
@@ -570,36 +593,8 @@ def dashboard():
     
     return render_template('dashboard.html', stocks=stocks_data.to_dict('records'))
 
-@app.route('/add_stock', methods=['POST'])
-def add_stock():
-    """Add a new stock to track"""
-    symbol = request.form.get('symbol', '').upper()
-    name = request.form.get('name', '')
-    
-    if not symbol:
-        return jsonify({'error': 'Symbol required'}), 400
-    
-    try:
-        # Verify stock exists
-        stock = yf.Ticker(symbol)
-        info = stock.info
-        if not name:
-            name = info.get('longName', symbol)
-        
-        conn = sqlite3.connect(Config.DATABASE_PATH)
-        cursor = conn.cursor()
-        cursor.execute('INSERT OR IGNORE INTO stocks (symbol, name) VALUES (?, ?)', (symbol, name))
-        conn.commit()
-        conn.close()
-        
-        # Update data immediately
-        analyzer.update_stock_data(symbol)
-        
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
 @app.route('/delete_stock/<symbol>', methods=['POST'])
+@auth.login_required
 def delete_stock(symbol):
     """Delete a stock from tracking"""
     try:
@@ -621,6 +616,7 @@ def delete_stock(symbol):
         return jsonify({'error': str(e)}), 400
 
 @app.route('/stock/<symbol>')
+@auth.login_required
 def stock_detail(symbol):
     """Detailed view for a specific stock"""
     conn = sqlite3.connect(Config.DATABASE_PATH)
@@ -674,11 +670,13 @@ def stock_detail(symbol):
                          current_data=df.iloc[0].to_dict())
 
 @app.route('/backtest')
+@auth.login_required
 def backtest_page():
     """Backtesting interface"""
     return render_template('backtest.html')
 
 @app.route('/api/backtest', methods=['POST'])
+@auth.login_required
 def run_backtest():
     """Run a backtest"""
     data = request.json
@@ -747,4 +745,20 @@ def run_backtest():
 if __name__ == '__main__':
     print("Starting Stock Tracker...")
     print("Dashboard will be available at: http://localhost:5555")
-    socketio.run(app, debug=True, host='0.0.0.0', port=5555)
+    
+    # Check if running in production
+    is_production = os.environ.get('FLASK_ENV') == 'production'
+    
+    if is_production:
+        # Production mode - use gevent
+        socketio.run(app, 
+                    host='0.0.0.0',
+                    port=5555, 
+                    debug=False,
+                    allow_unsafe_werkzeug=True)
+    else:
+        # Development mode
+        socketio.run(app, 
+                    host='0.0.0.0', 
+                    port=5555, 
+                    debug=True)

@@ -1,6 +1,7 @@
 # requirements.txt
 Flask
 Flask-SocketIO
+flask_httpauth
 yfinance
 pandas
 numpy
