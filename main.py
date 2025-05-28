@@ -671,6 +671,14 @@ def stock_detail(symbol):
     if df.empty:
         return "No data found", 404
     
+    # Debug: Print some info about the data
+    print(f"DEBUG: Retrieved {len(df)} records for {symbol}")
+    print(f"DEBUG: Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+    print(f"DEBUG: Price range: ${df['close'].min():.2f} to ${df['close'].max():.2f}")
+    print(f"DEBUG: Bullishness range: {df['bullishness_score'].min():.1f} to {df['bullishness_score'].max():.1f}")
+    print(f"DEBUG: Latest 3 records:")
+    print(df[['timestamp', 'close', 'bullishness_score']].tail(3))
+    
     # Convert timestamp to datetime if it's not already
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     
@@ -751,6 +759,47 @@ def stock_detail(symbol):
                          symbol=symbol, 
                          chart=chart_json,
                          current_data=current_data)
+
+@app.route('/api/debug/<symbol>')
+@auth.login_required
+def debug_stock_data(symbol):
+    """Debug endpoint to see what data is stored"""
+    conn = sqlite3.connect(Config.DATABASE_PATH)
+    
+    # Get basic info
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM stock_data WHERE symbol = ?', (symbol,))
+    total_count = cursor.fetchone()[0]
+    
+    # Get latest records
+    latest_query = '''
+        SELECT timestamp, close, bullishness_score 
+        FROM stock_data 
+        WHERE symbol = ? 
+        ORDER BY timestamp DESC 
+        LIMIT 10
+    '''
+    latest_df = pd.read_sql_query(latest_query, conn, params=(symbol,))
+    
+    # Get date range
+    cursor.execute('''
+        SELECT MIN(timestamp), MAX(timestamp) 
+        FROM stock_data 
+        WHERE symbol = ?
+    ''', (symbol,))
+    date_range = cursor.fetchone()
+    
+    conn.close()
+    
+    return jsonify({
+        'symbol': symbol,
+        'total_records': total_count,
+        'date_range': {
+            'earliest': date_range[0],
+            'latest': date_range[1]
+        },
+        'latest_10_records': latest_df.to_dict('records')
+    })
 
 @app.route('/backtest')
 @auth.login_required
