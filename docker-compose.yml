@@ -7,6 +7,8 @@ services:
     build: 
       context: .
       no_cache: true
+      args:
+        CACHEBUST: "$(date +%s)"
     container_name: stock-tracker
     ports:
       - "5555:5555"
