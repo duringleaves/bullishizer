@@ -57,12 +57,19 @@ I wrote it to send me notifications via SimplePush.
 Installation:
 
 git clone https://github.com/duringleaves/bullishizer
+
 cd bullishizer
+
 python -m venv .venv
+
 . .venv/bin/activate
+
 pip install -r requirements.txt
+
 mv .env_sample .env
+
 (edit .env with your preferred username/password, if desired)
 
 python main.py
+
 (default authentication: u: admin p: password123)
