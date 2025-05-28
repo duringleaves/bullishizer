@@ -4,7 +4,9 @@ version: '3.8'
 
 services:
   stock-tracker:
-    build: .
+    build: 
+      context: .
+      no_cache: true
     container_name: stock-tracker
     ports:
       - "5555:5555"
