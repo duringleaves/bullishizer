@@ -655,12 +655,15 @@ def stock_detail(symbol):
     """Detailed view for a specific stock"""
     conn = sqlite3.connect(Config.DATABASE_PATH)
     
-    # Get recent data
+    # Get the most recent 100 data points, then order them chronologically for charting
     query = '''
-        SELECT * FROM stock_data 
-        WHERE symbol = ? 
-        ORDER BY timestamp DESC 
-        LIMIT 100
+        SELECT * FROM (
+            SELECT * FROM stock_data 
+            WHERE symbol = ? 
+            ORDER BY timestamp DESC 
+            LIMIT 100
+        ) 
+        ORDER BY timestamp ASC
     '''
     df = pd.read_sql_query(query, conn, params=(symbol,))
     conn.close()
@@ -668,40 +671,86 @@ def stock_detail(symbol):
     if df.empty:
         return "No data found", 404
     
+    # Convert timestamp to datetime if it's not already
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    
     # Create charts
     fig = go.Figure()
     
-    # Price chart
+    # Price chart on primary y-axis
     fig.add_trace(go.Scatter(
         x=df['timestamp'], 
         y=df['close'],
         mode='lines',
-        name='Price',
+        name='Price ($)',
+        line=dict(color='blue', width=2),
         yaxis='y'
     ))
     
-    # Bullishness score
+    # Bullishness score on secondary y-axis
     fig.add_trace(go.Scatter(
         x=df['timestamp'], 
         y=df['bullishness_score'],
         mode='lines',
         name='Bullishness Score',
+        line=dict(color='red', width=2),
         yaxis='y2'
     ))
     
+    # Add horizontal reference lines for bullishness score
+    fig.add_hline(y=80, line_dash="dash", line_color="green", 
+                  annotation_text="Strong Buy (80)", yref="y2")
+    fig.add_hline(y=60, line_dash="dash", line_color="orange", 
+                  annotation_text="Buy (60)", yref="y2")
+    fig.add_hline(y=40, line_dash="dash", line_color="red", 
+                  annotation_text="Sell (40)", yref="y2")
+    fig.add_hline(y=20, line_dash="dash", line_color="darkred", 
+                  annotation_text="Strong Sell (20)", yref="y2")
+    
+    # Update layout with dual y-axes
     fig.update_layout(
-        title=f'{symbol} Analysis',
-        yaxis=dict(title='Price', side='left'),
-        yaxis2=dict(title='Bullishness Score', side='right', overlaying='y'),
-        xaxis=dict(title='Date')
+        title=f'{symbol} - Price & Bullishness Analysis',
+        xaxis=dict(
+            title='Date',
+            type='date'
+        ),
+        yaxis=dict(
+            title='Price ($)',
+            side='left',
+            showgrid=True,
+            gridcolor='lightgray'
+        ),
+        yaxis2=dict(
+            title='Bullishness Score (0-100)',
+            side='right',
+            overlaying='y',
+            range=[0, 100],  # Fixed range for bullishness score
+            showgrid=False,
+            tickmode='linear',
+            tick0=0,
+            dtick=20
+        ),
+        hovermode='x unified',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        height=500,
+        showlegend=True
     )
     
     chart_json = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
     
+    # Get the most recent data point for current_data (reverse order to get latest)
+    current_data = df.iloc[-1].to_dict()  # Last row (most recent) since we sorted ASC
+    
     return render_template('stock_detail.html', 
                          symbol=symbol, 
                          chart=chart_json,
-                         current_data=df.iloc[0].to_dict())
+                         current_data=current_data)
 
 @app.route('/backtest')
 @auth.login_required
