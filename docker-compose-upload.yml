@@ -1,0 +1,37 @@
+# docker-compose-upload.yml
+# Use this when uploading files directly to Portainer
+
+version: '3.8'
+
+services:
+  stock-tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock-tracker
+    ports:
+      - "5555:5555"
+    volumes:
+      - stock-tracker-data:/app/data
+      - stock-tracker-logs:/app/logs
+    environment:
+      - SIMPLEPUSH_KEY=${SIMPLEPUSH_KEY:-}
+      - FLASK_ENV=production
+      - UPDATE_INTERVAL=300
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5555/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  stock-tracker-data:
+    driver: local
+  stock-tracker-logs:
+    driver: local
+
+networks:
+  default:
+    name: stock-tracker-network
