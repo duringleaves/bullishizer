@@ -191,12 +191,29 @@
 
                 data.trades.forEach(trade => {
                     const row = tradesTable.insertRow();
+
+                    // Determine badge color and text
+                    let badgeClass, actionText;
+                    if (trade.action === 'BUY') {
+                        badgeClass = 'bg-success';
+                        actionText = 'BUY';
+                    } else if (trade.action === 'SELL') {
+                        badgeClass = 'bg-danger';
+                        actionText = 'SELL';
+                    } else if (trade.action === 'MARK-TO-MARKET') {
+                        badgeClass = 'bg-info';
+                        actionText = 'CURRENT VALUE';
+                    } else {
+                        badgeClass = 'bg-secondary';
+                        actionText = trade.action;
+                    }
+
                     row.innerHTML = `
                 <td>${new Date(trade.date).toLocaleDateString()}</td>
-                <td><span class="badge ${trade.action === 'BUY' ? 'bg-success' : 'bg-danger'}">${trade.action}</span></td>
-                <td>${trade.price.toFixed(2)}</td>
+                <td><span class="badge ${badgeClass}">${actionText}</span></td>
+                <td>$${trade.price.toFixed(2)}</td>
                 <td>${trade.shares.toFixed(2)}</td>
-                <td>${(trade.price * trade.shares).toLocaleString()}</td>
+                <td>$${(trade.price * trade.shares).toLocaleString()}</td>
             `;
                 });
 

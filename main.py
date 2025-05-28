@@ -18,7 +18,9 @@ import plotly.utils
 
 # Configuration
 class Config:
+    # Use different paths for development vs production
     DATABASE_PATH = 'data/stock_tracker.db'
+    
     SIMPLEPUSH_KEY = os.environ.get('SIMPLEPUSH_KEY', '')
     UPDATE_INTERVAL = int(os.environ.get('UPDATE_INTERVAL', 300))
     MARKET_HOURS_ONLY = True
@@ -146,6 +148,9 @@ class StockAnalyzer:
         
     def init_database(self):
         """Initialize SQLite database"""
+        # Ensure the data directory exists
+        os.makedirs(os.path.dirname(Config.DATABASE_PATH) if os.path.dirname(Config.DATABASE_PATH) else '.', exist_ok=True)
+        
         conn = sqlite3.connect(Config.DATABASE_PATH)
         cursor = conn.cursor()
         
@@ -700,44 +705,57 @@ def run_backtest():
         return jsonify({'error': 'No data found for the specified period'}), 400
     
     # Simple backtest logic
-    position = 0
+    position = 0  # Number of shares held
     portfolio_value = 10000
     cash = portfolio_value
     trades = []
     
     for idx, row in df.iterrows():
-        if position == 0 and row['bullishness_score'] >= buy_threshold:
-            # Buy
-            shares = cash / row['close']
+        current_price = row['close']
+        current_score = row['bullishness_score']
+        
+        if position == 0 and current_score >= buy_threshold:
+            # Buy signal - use all available cash
+            shares = cash / current_price
             position = shares
             cash = 0
             trades.append({
                 'date': row['timestamp'],
                 'action': 'BUY',
-                'price': row['close'],
+                'price': current_price,
                 'shares': shares
             })
-        elif position > 0 and row['bullishness_score'] <= sell_threshold:
-            # Sell
-            cash = position * row['close']
+        elif position > 0 and current_score <= sell_threshold:
+            # Sell signal - sell all shares
+            cash = position * current_price
             trades.append({
                 'date': row['timestamp'],
                 'action': 'SELL',
-                'price': row['close'],
+                'price': current_price,
                 'shares': position
             })
             position = 0
     
-    # Final portfolio value
-    final_value = cash + (position * df.iloc[-1]['close'])
+    # Calculate final portfolio value using the LAST price in the dataset
+    final_price = df.iloc[-1]['close']
+    final_value = cash + (position * final_price)
     total_return = (final_value - portfolio_value) / portfolio_value * 100
+    
+    # Debug info - you can remove this later
+    print(f"Final calculation: Cash=${cash:.2f}, Position={position:.2f} shares, Final Price=${final_price:.2f}")
+    print(f"Final Value = ${cash:.2f} + ({position:.2f} × ${final_price:.2f}) = ${final_value:.2f}")
     
     results = {
         'initial_value': portfolio_value,
         'final_value': final_value,
         'total_return': total_return,
         'trades': trades,
-        'num_trades': len(trades)
+        'num_trades': len(trades),
+        'final_position': {
+            'cash': cash,
+            'shares': position,
+            'final_price': final_price
+        }
     }
     
     return jsonify(results)
@@ -752,7 +770,7 @@ if __name__ == '__main__':
     if is_production:
         # Production mode - use gevent
         socketio.run(app, 
-                    host='0.0.0.0',
+                    host='0.0.0.0', 
                     port=5555, 
                     debug=False,
                     allow_unsafe_werkzeug=True)
