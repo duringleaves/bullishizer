@@ -476,42 +476,70 @@ class StockAnalyzer:
             self.check_alerts(symbol, latest_score)
     
     def check_alerts(self, symbol: str, current_score: float):
-        """Check for buy/sell alerts"""
+        """Check for buy/sell alerts - only send once per threshold crossing"""
         conn = sqlite3.connect(Config.DATABASE_PATH)
         cursor = conn.cursor()
         
-        # Get previous score
+        # Get the last few scores to determine trend and avoid duplicate alerts
         cursor.execute('''
-            SELECT bullishness_score FROM stock_data 
-            WHERE symbol = ? ORDER BY timestamp DESC LIMIT 2
+            SELECT bullishness_score, timestamp FROM stock_data 
+            WHERE symbol = ? 
+            ORDER BY timestamp DESC 
+            LIMIT 5
         ''', (symbol,))
-        scores = cursor.fetchall()
+        recent_scores = cursor.fetchall()
         
-        if len(scores) >= 2:
-            prev_score = scores[1][0]
+        if len(recent_scores) < 2:
+            conn.close()
+            return
+        
+        # Get recent alerts to avoid duplicates
+        cursor.execute('''
+            SELECT alert_type, triggered_at FROM alerts 
+            WHERE symbol = ? AND triggered_at > datetime('now', '-1 hour')
+            ORDER BY triggered_at DESC
+        ''', (symbol,))
+        recent_alerts = cursor.fetchall()
+        
+        prev_score = recent_scores[1][0]  # Previous score
+        alert_message = None
+        alert_type = None
+        
+        # Define alert conditions - only trigger on threshold crossings
+        if current_score >= 80 and prev_score < 80:
+            alert_type = "STRONG_BUY"
+            alert_message = f"{symbol} STRONG BUY signal - Bullishness Score: {current_score:.1f}"
+        elif current_score >= 60 and prev_score < 60 and current_score < 80:
+            alert_type = "BUY" 
+            alert_message = f"{symbol} BUY signal - Bullishness Score: {current_score:.1f}"
+        elif current_score <= 40 and prev_score > 40 and current_score > 20:
+            alert_type = "WEAK"
+            alert_message = f"{symbol} WEAK signal - Bullishness Score: {current_score:.1f}"
+        elif current_score <= 20 and prev_score > 20:
+            alert_type = "SELL"
+            alert_message = f"{symbol} SELL signal - Bullishness Score: {current_score:.1f}"
+        
+        # Check if we've already sent this type of alert recently
+        if alert_message and alert_type:
+            # Look for the same alert type in recent alerts
+            duplicate_found = False
+            for recent_alert_type, recent_time in recent_alerts:
+                if recent_alert_type == alert_type:
+                    # Check if it was sent in the last hour
+                    recent_time_dt = datetime.strptime(recent_time, '%Y-%m-%d %H:%M:%S')
+                    if (datetime.now() - recent_time_dt).total_seconds() < 3600:  # 1 hour
+                        duplicate_found = True
+                        print(f"DEBUG: Skipping duplicate {alert_type} alert for {symbol}")
+                        break
             
-            alert_message = None
-            alert_type = None
-            
-            if current_score >= 80 and prev_score < 80:
-                alert_message = f"{symbol} STRONG BUY signal - Bullishness Score: {current_score:.1f}"
-                alert_type = "BUY"
-            elif current_score >= 60 and prev_score < 60:
-                alert_message = f"{symbol} BUY signal - Bullishness Score: {current_score:.1f}"
-                alert_type = "BUY"
-            elif current_score <= 20 and prev_score > 20:
-                alert_message = f"{symbol} SELL signal - Bullishness Score: {current_score:.1f}"
-                alert_type = "SELL"
-            elif current_score <= 40 and prev_score > 40:
-                alert_message = f"{symbol} WEAK signal - Bullishness Score: {current_score:.1f}"
-                alert_type = "WEAK"
-            
-            if alert_message:
+            if not duplicate_found:
                 # Save alert to database
                 cursor.execute('''
                     INSERT INTO alerts (symbol, alert_type, message)
                     VALUES (?, ?, ?)
                 ''', (symbol, alert_type, alert_message))
+                
+                print(f"DEBUG: Sending new {alert_type} alert for {symbol}")
                 
                 # Send push notification
                 self.send_push_notification(alert_message)
@@ -523,6 +551,23 @@ class StockAnalyzer:
                     'message': alert_message,
                     'score': current_score
                 })
+        
+        conn.commit()
+        conn.close()
+    
+    def cleanup_old_alerts(self):
+        """Clean up alerts older than 7 days"""
+        conn = sqlite3.connect(Config.DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            DELETE FROM alerts 
+            WHERE triggered_at < datetime('now', '-7 days')
+        ''')
+        
+        deleted_count = cursor.rowcount
+        if deleted_count > 0:
+            print(f"DEBUG: Cleaned up {deleted_count} old alerts")
         
         conn.commit()
         conn.close()
@@ -549,6 +594,8 @@ analyzer = StockAnalyzer()
 # Background monitoring thread
 def monitoring_thread():
     """Background thread for continuous monitoring"""
+    cleanup_counter = 0
+    
     while True:
         try:
             conn = sqlite3.connect(Config.DATABASE_PATH)
@@ -561,6 +608,12 @@ def monitoring_thread():
                 print(f"Updating {symbol}...")
                 analyzer.update_stock_data(symbol)
                 time.sleep(2)  # Rate limiting
+            
+            # Clean up old alerts every 10 cycles (roughly once per hour if UPDATE_INTERVAL is 300)
+            cleanup_counter += 1
+            if cleanup_counter >= 10:
+                analyzer.cleanup_old_alerts()
+                cleanup_counter = 0
             
             print(f"Completed update cycle. Sleeping for {Config.UPDATE_INTERVAL} seconds...")
             time.sleep(Config.UPDATE_INTERVAL)
